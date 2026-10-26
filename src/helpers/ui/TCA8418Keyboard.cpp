@@ -60,9 +60,14 @@ TCA8418Keyboard::TCA8418Keyboard(uint8_t addr, int8_t int_pin, int8_t bl_pin)
 bool TCA8418Keyboard::begin(TwoWire &wire) {
   _wire = &wire;
 
-  // Keyboard backlight via LED PWM
-  ledcSetup(LEDC_BACKLIGHT_CHANNEL, LEDC_BACKLIGHT_FREQ, LEDC_BACKLIGHT_BITS);
-  ledcAttachPin(_bl_pin, LEDC_BACKLIGHT_CHANNEL);
+  // Keyboard backlight via LED PWM. Continue keyboard bring-up if PWM cannot
+  // be allocated; callers may still use the keys without a backlight.
+  _backlight_initialized = ledcSetup(LEDC_BACKLIGHT_CHANNEL, LEDC_BACKLIGHT_FREQ, LEDC_BACKLIGHT_BITS) != 0;
+  if (_backlight_initialized) {
+    ledcAttachPin(_bl_pin, LEDC_BACKLIGHT_CHANNEL);
+  } else {
+    Serial.println("TCA8418: keyboard backlight PWM unavailable");
+  }
 
   reset();
 
@@ -238,12 +243,14 @@ char TCA8418Keyboard::readKey() {
 }
 
 void TCA8418Keyboard::setBacklight(bool on) {
-  ledcWrite(LEDC_BACKLIGHT_CHANNEL, on ? _brightness : 0);
+  if (_backlight_initialized)
+    ledcWrite(LEDC_BACKLIGHT_CHANNEL, on ? _brightness : 0);
 }
 
 void TCA8418Keyboard::setBacklightBrightness(uint8_t value) {
   _brightness = value;
-  ledcWrite(LEDC_BACKLIGHT_CHANNEL, value);
+  if (_backlight_initialized)
+    ledcWrite(LEDC_BACKLIGHT_CHANNEL, value);
 }
 
 void TCA8418Keyboard::toggleBacklight() {

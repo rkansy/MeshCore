@@ -111,6 +111,7 @@ private:
   uint32_t _last_tap = 0;
 
   uint8_t _brightness = 0;
+  bool _backlight_initialized = false;
   volatile bool _int_pending = false;
 
   uint8_t readReg(uint8_t reg);

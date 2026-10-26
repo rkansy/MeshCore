@@ -280,6 +280,13 @@ static void showStatus(const char* msg, uint32_t duration=1000) { StrHelper::str
 static void drawText(int x, int y, const char* text, bool small=false, ColorVal color=C_INK) {
   display.setColor(color); display.setTextSize(small ? 1 : 2); display.setCursor(x,y); display.print(text);
 }
+static void drawStartupFailure(const char* stage) {
+  display.startFrame(C_BG);
+  drawText(12,75,"STARTUP FAILED",false,C_ACCENT);
+  drawText(12,112,stage,true,C_INK);
+  drawText(12,142,"Check serial console",true,C_DIM);
+  display.endFrame();
+}
 static void ellipsize(char* dst, size_t size, const char* src, size_t max_chars) {
   if (size == 0) return;
   size_t n = strlen(src);
@@ -458,19 +465,35 @@ static void back() {
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("[pager] board init");
   board.begin();
-  if(!display.begin()) return;
+  if(!display.begin()) { Serial.println("[pager] display init failed"); return; }
   keyboard.begin();rotary.begin();user_btn.begin();rotary_center.begin();
   settings.brightness=64;settings.keyboard_light=1;
-  SPIFFS.begin(true);
+  if(!SPIFFS.begin(true)) {
+    Serial.println("[pager] SPIFFS mount failed");
+    drawStartupFailure("SPIFFS MOUNT FAILED");
+    return;
+  }
   File config=SPIFFS.open("/pager.cfg","r"); if(config){PagerSettings loaded;if(config.read((uint8_t*)&loaded,sizeof(loaded))==sizeof(loaded)&&loaded.magic==SETTINGS_MAGIC)settings=loaded;config.close();}
   if(settings.screen_timeout>5)settings.screen_timeout=2;
   if(settings.brightness<10||settings.brightness>100)settings.brightness=64;
   display.setBrightness(settings.brightness*255/100);keyboard.setBacklight(settings.keyboard_light?settings.brightness*255/100:0);
   display.startFrame(C_BG);drawText(170,86,"MESH PAGER");drawText(210,112,"v0.1.0",true,C_DIM);display.endFrame();
-  if(!radio_init()) return;
+  Serial.println("[pager] radio init");
+  if(!radio_init()) {
+    Serial.println("[pager] radio init failed");
+    drawStartupFailure("RADIO INIT FAILED");
+    return;
+  }
+  Serial.println("[pager] radio init ok; starting mesh");
   pager_rng.begin(radio_driver.getRngSeed());
-  if(!pager_mesh.start()) return;
+  if(!pager_mesh.start()) {
+    Serial.println("[pager] mesh/storage init failed");
+    drawStartupFailure("MESH START FAILED");
+    return;
+  }
+  Serial.println("[pager] mesh start ok");
   pager_mesh.setCurrentChannel(settings.current_channel);
   ChannelDetails selected_channel;
   if(!pager_mesh.getChannel(settings.current_channel,selected_channel)||!selected_channel.name[0]){
