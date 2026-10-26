@@ -465,6 +465,10 @@ static void back() {
 
 void setup() {
   Serial.begin(115200);
+#ifdef PAGER_DEBUG
+  uint32_t serial_wait_started=millis();
+  while(!Serial && millis()-serial_wait_started<8000) delay(10);
+#endif
   Serial.println("[pager] board init");
   board.begin();
   if(!display.begin()) { Serial.println("[pager] display init failed"); return; }
@@ -478,6 +482,9 @@ void setup() {
   File config=SPIFFS.open("/pager.cfg","r"); if(config){PagerSettings loaded;if(config.read((uint8_t*)&loaded,sizeof(loaded))==sizeof(loaded)&&loaded.magic==SETTINGS_MAGIC)settings=loaded;config.close();}
   if(settings.screen_timeout>5)settings.screen_timeout=2;
   if(settings.brightness<10||settings.brightness>100)settings.brightness=64;
+#ifdef PAGER_DEBUG
+  settings.screen_timeout=5; // keep the display awake while collecting boot diagnostics
+#endif
   display.setBrightness(settings.brightness*255/100);keyboard.setBacklight(settings.keyboard_light?settings.brightness*255/100:0);
   display.startFrame(C_BG);drawText(170,86,"MESH PAGER");drawText(210,112,"v0.1.0",true,C_DIM);display.endFrame();
   Serial.println("[pager] radio init");
