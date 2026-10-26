@@ -506,6 +506,15 @@ void setup() {
   if(!pager_mesh.getChannel(settings.current_channel,selected_channel)||!selected_channel.name[0]){
     for(uint8_t i=0;i<MAX_GROUP_CHANNELS;i++){if(pager_mesh.getChannel(i,selected_channel)&&selected_channel.name[0]){pager_mesh.setCurrentChannel(i);settings.current_channel=i;saveUISettings();break;}}
   }
+  // RadioLib initializes the shared SPI host after the panel splash. Re-init
+  // the ST7796 once more afterward so its bus/panel state is valid for UI frames.
+  Serial.println("[pager] reinitializing display after radio startup");
+  if(!display.begin()) {
+    Serial.println("[pager] display reinit failed");
+    drawStartupFailure("DISPLAY REINIT FAILED");
+    return;
+  }
+  Serial.println("[pager] display ready; drawing inbox");
   last_seen_message_serial=pager_mesh.messageSerial();
   last_input=millis();render();
 }
