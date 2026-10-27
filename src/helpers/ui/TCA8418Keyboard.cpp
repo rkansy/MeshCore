@@ -69,6 +69,16 @@ bool TCA8418Keyboard::begin(TwoWire &wire) {
     Serial.println("TCA8418: keyboard backlight PWM unavailable");
   }
 
+  // Probe the controller: the TCA8418 ID register (0x00) reads 0x18 when a
+  // live chip is on the bus. If absent (or dead), degrade gracefully so key
+  // polling stays out of the I2C bus and the boot log stays clean.
+  if (!probePresent()) {
+    Serial.printf("TCA8418: no keyboard at 0x%02X, continuing without it\n", _addr);
+    pinMode(_int_pin, INPUT_PULLUP);
+    return true;
+  }
+  _present = true;
+
   reset();
 
   // Enable key-event + GPI interrupts on the controller
@@ -82,6 +92,17 @@ bool TCA8418Keyboard::begin(TwoWire &wire) {
 
   setBacklightBrightness(0);
   return true;
+}
+
+bool TCA8418Keyboard::probePresent() {
+  _wire->beginTransmission(_addr);
+  _wire->write(0x00);
+  if (_wire->endTransmission() != 0)
+    return false;
+  _wire->requestFrom(_addr, (uint8_t)1);
+  if (_wire->available() < 1)
+    return false;
+  return _wire->read() == 0x18;
 }
 
 void TCA8418Keyboard::reset() {
@@ -156,7 +177,7 @@ uint8_t TCA8418Keyboard::keyCount() {
 }
 
 void TCA8418Keyboard::update() {
-  if (!_int_pending)
+  if (!_present || !_int_pending)
     return;
   _int_pending = false;
   processEvents();

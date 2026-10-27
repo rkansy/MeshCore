@@ -45,7 +45,12 @@ public:
 
   #if defined(PIN_BOARD_SDA) && defined(PIN_BOARD_SCL)
    #if PIN_BOARD_SDA >= 0 && PIN_BOARD_SCL >= 0
+    #if defined(PIN_BOARD_I2C_FREQ)
+    // Some boards (e.g. T-LoRa Pager) only ACK I2C reads at fast mode.
+    Wire.begin(PIN_BOARD_SDA, PIN_BOARD_SCL, (uint32_t)PIN_BOARD_I2C_FREQ);
+    #else
     Wire.begin(PIN_BOARD_SDA, PIN_BOARD_SCL);
+    #endif
    #endif
   #else
     Wire.begin();

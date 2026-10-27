@@ -112,9 +112,11 @@ private:
 
   uint8_t _brightness = 0;
   bool _backlight_initialized = false;
+  bool _present = false;
   volatile bool _int_pending = false;
 
   uint8_t readReg(uint8_t reg);
+  bool probePresent();
   void writeReg(uint8_t reg, uint8_t value);
   uint8_t keyCount();
 

@@ -46,12 +46,17 @@ void AutoDiscoverRTCClock::begin(TwoWire& wire) {
     rtc_8563_success = rtc_8563.begin(&wire);
   }
 
+#if !defined(DISABLE_RX8130CE_PROBE)
+  // The RX8130CE shares address 0x32 with the TCA8418 keyboard on the
+  // T-LoRa Pager; probing it there would misidentify the keyboard as an
+  // RTC and its init sequence would clobber the keyboard's matrix config.
   if (i2c_probe(wire, RX8130CE_ADDRESS)) {
     MESH_DEBUG_PRINTLN("RX8130CE: Found");
     rtc_8130.begin(&wire);
     rtc_8130_success = true;
     MESH_DEBUG_PRINTLN("RX8130CE: Initialized");
   }
+#endif
 }
 
 uint32_t AutoDiscoverRTCClock::getCurrentTime() {
