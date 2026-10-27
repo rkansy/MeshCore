@@ -112,6 +112,8 @@ class TLoraPagerDisplay : public LGFXDisplay {
 public:
   TLoraPagerDisplay() : LGFXDisplay(480, 222, _disp) {}
 
+  void setBrightness(uint8_t brightness) { display->setBrightness(brightness); }
+
   bool begin() {
     turnOn();
     display->init();
