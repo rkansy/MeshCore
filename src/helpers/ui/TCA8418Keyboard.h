@@ -109,6 +109,7 @@ private:
   uint8_t _last_key = 255;
   uint8_t _next_key = 255;
   uint32_t _last_tap = 0;
+  uint32_t _last_poll = 0;
 
   uint8_t _brightness = 0;
   bool _backlight_initialized = false;

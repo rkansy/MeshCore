@@ -69,11 +69,13 @@ bool TCA8418Keyboard::begin(TwoWire &wire) {
     Serial.println("TCA8418: keyboard backlight PWM unavailable");
   }
 
-  // Probe the controller: the TCA8418 ID register (0x00) reads 0x18 when a
-  // live chip is on the bus. If absent (or dead), degrade gracefully so key
-  // polling stays out of the I2C bus and the boot log stays clean.
+  // Probe the controller: presence is "ACKs a register read". Do NOT require
+  // a chip-ID match: this unit's TCA8418 answers with chip_id=0x00 (not the
+  // datasheet 0x18), which previously made a live keyboard look absent and
+  // left the INT line unattached (all keys dead). If truly absent, degrade
+  // gracefully so key polling stays out of the I2C bus.
   if (!probePresent()) {
-    Serial.printf("TCA8418: no keyboard at 0x%02X, continuing without it\n", _addr);
+    log_e("TCA8418: no keyboard at 0x%02X, continuing without it", _addr);
     pinMode(_int_pin, INPUT_PULLUP);
     return true;
   }
@@ -95,14 +97,26 @@ bool TCA8418Keyboard::begin(TwoWire &wire) {
 }
 
 bool TCA8418Keyboard::probePresent() {
+  uint8_t r0 = 0x00, chip_id = 0xFF;
+
   _wire->beginTransmission(_addr);
   _wire->write(0x00);
   if (_wire->endTransmission() != 0)
     return false;
   _wire->requestFrom(_addr, (uint8_t)1);
-  if (_wire->available() < 1)
+  if (_wire->available() >= 1)
+    r0 = _wire->read();
+
+  _wire->beginTransmission(_addr);
+  _wire->write(0xE7); // CHIP_ID
+  if (_wire->endTransmission() != 0)
     return false;
-  return _wire->read() == 0x18;
+  _wire->requestFrom(_addr, (uint8_t)1);
+  if (_wire->available() >= 1)
+    chip_id = _wire->read();
+
+  log_e("TCA8418 probe @0x%02X: reg0=0x%02X chip_id=0x%02X (chip_id not checked: unit reports 0x00)", _addr, r0, chip_id);
+  return true;  // bus presence is enough (see note in begin())
 }
 
 void TCA8418Keyboard::reset() {
@@ -177,8 +191,19 @@ uint8_t TCA8418Keyboard::keyCount() {
 }
 
 void TCA8418Keyboard::update() {
-  if (!_present || !_int_pending)
+  if (!_present)
     return;
+  if (!_int_pending) {
+    // Polling fallback: the TCA8418 INT line is not guaranteed on every
+    // board wiring; Meshtastic polls for the same reason. Reading the FIFO
+    // is cheap and key events are latched in-chip until read.
+    uint32_t now = millis();
+    if (now - _last_poll >= 50) {
+      _last_poll = now;
+      if (keyCount() == 0)
+        return;
+    }
+  }
   _int_pending = false;
   processEvents();
 }
@@ -226,8 +251,10 @@ void TCA8418Keyboard::released() {
 
   if (c == BL_TOGGLE) {
     toggleBacklight();
+    log_e("TCA8418 key: backlight toggle");
   } else if (c != NONE) {
     queueEvent(c);
+    log_e("TCA8418 key: layer=%u char=0x%02X key=%u", layer, (uint8_t)c, _last_key);
   }
 
   if (!isModifierKey(_last_key))

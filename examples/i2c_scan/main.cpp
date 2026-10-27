@@ -4,7 +4,7 @@
 
 #define BUILD_ID "XL9555-V8"
 #define EXP_ADDR 0x20
-#define KB_ADDR 0x32
+#define KB_ADDR 0x34
 
 static bool x_read(uint8_t reg, uint8_t* v) {
   Wire.beginTransmission(EXP_ADDR);
@@ -27,6 +27,15 @@ static bool kb_alive() {
   if (Wire.endTransmission() != 0) return false;
   Wire.requestFrom(KB_ADDR, (uint8_t)1);
   return Wire.available() >= 1;
+}
+
+static bool x_read_kb(uint8_t reg, uint8_t* v) {
+  Wire.beginTransmission(KB_ADDR);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(KB_ADDR, (uint8_t)1) != 1) return false;
+  *v = Wire.read();
+  return true;
 }
 
 void setup() {
@@ -59,10 +68,25 @@ void setup() {
   x_write(0x03, 0x01);
   delay(200);
   log_e("%s kb KB_EN only: %s", BUILD_ID, kb_alive() ? "ALIVE" : "DEAD");
+
+  // register dump of the keyboard (all gates on)
+  x_write(0x02, 0x19);
+  x_write(0x03, 0x13);
+  delay(200);
+  static const uint8_t regs[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x11, 0x1D, 0x1E, 0x1F, 0xE7};
+  for (uint8_t r : regs) {
+    uint8_t v = 0;
+    bool rok = x_read_kb(r, &v);
+    log_e("%s kb reg 0x%02X = 0x%02X%s", BUILD_ID, r, v, rok ? "" : " (read fail)");
+  }
   log_e("%s done", BUILD_ID);
 }
 
 void loop() {
-  delay(10000);
-  log_e("%s kb now: %s", BUILD_ID, kb_alive() ? "ALIVE" : "DEAD");
+  delay(500);
+  uint8_t kc = 0;
+  if (x_read_kb(0x03, &kc))
+    log_e("%s kb key_count(0x03)=%u (lck_ec=0x%02X)", BUILD_ID, kc & 0x0F, kc);
+  else
+    log_e("%s kb READ FAIL", BUILD_ID);
 }
