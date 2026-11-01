@@ -155,12 +155,14 @@ The native USB-JTAG logs are now visible with `log_e` stage messages. The latest
 production-debug boot shows board init, TCA8418 probe at 0x34, radio init OK,
 mesh start OK, display init, and `inbox frame complete`. Setup is not stopping;
 the renderer returns on the empty Inbox. OpenOCD readback at `0x10000` matches
-the current debug image SHA-256 exactly. The webcam view is still a bright white
-panel with no legible UI text, so physical Inbox presentation needs confirmation.
+the current debug image SHA-256 exactly. The previous LifeCam view was saturated
+white under auto exposure; locking exposure manually reveals the display content
+and the Inbox text.
 
-LEDC warnings remain in isolation runs; the production boot after the SPI/order
-change did not emit them. I2C read errors may be related to the current USB-reset
-power state; keyboard presence depends on the peripheral power rails.
+The latest USB-JTAG reset sees the TCA8418 at 0x34 and has no LEDC or I2C
+read error in the production startup trace (it reports a duplicate APB callback).
+The `LEDC is not initialized` warning appeared in earlier isolation runs and
+remains a separate follow-up.
 
 ## Shared-SPI diagnosis and display tests (Paid Coder, Nov 1)
 
@@ -180,12 +182,27 @@ before the panel. This matches Meshtastic's host/init ordering.
   camera clip shows color changes through this sequence, so basic panel output
   survives mesh/radio startup in this order.
 
-The production debug firmware logs `radio init ok`, `mesh start ok`, and
-`inbox frame complete`; setup is not dying. The webcam still shows a bright
-white panel with no legible Inbox text, so the real UI's rendered contents
-remain unconfirmed. Compare the production render path against the successful
-solid-fill test. LEDC errors remain in isolation tests; the latest production
-boot showed I2C read errors and the TCA probe at 0x34.
+## Production render-path bisection (Paid Coder, Nov 1)
+
+`pager_debug` now performs five stages after radio + mesh startup: (1) a
+full-screen RGB565 red fill with no font/partial draw, (2) the production status
+bar, (3) status bar plus an inbox-area frame without inbox text, (4) the frame
+plus the production empty-Inbox text, and (5) the exact production `render()`
+frame. USB-JTAG logs reached all five stages and then `inbox frame complete`.
+The LifeCam video shows the red fill and subsequent UI output; the final still
+shows the empty-Inbox text when the camera exposure is locked. The earlier white
+blank appearance was an auto-exposure artifact, not a failed panel update.
+
+Production and isolation builds share `TLoraPagerDisplay::begin()`: ST7796 on
+SPI2, native 222x480, offset (49,0), rotation 3, 16-bit PSRAM sprite. The driver
+now checks the sprite allocation; the boot log reports logical/panel dimensions
+480x222 and `PSRAM ready`. `LGFXDisplay::endFrame()` pushes the full sprite at
+(0,0), so UI `fillRect` calls are framebuffer drawing rather than physical
+partial-window transfers. The full-screen fill verifies the full panel window
+after radio rebind; the status bar, frame, text, and production render all
+follow, with no breaking operation found. The still is small/rotated in the
+webcam view but confirms a nonblank Inbox. LEDC errors remain on the follow-up
+list; none appeared in this production-debug log.
 
 ## Verification status
 
@@ -194,8 +211,8 @@ boot showed I2C read errors and the TCA probe at 0x34.
 - Keyboard: PROBE + KEY INPUT VERIFIED at 0x34 (user keypress advanced the
   pager UI; shift-modifier key also tested). Remaining key-matrix details in
   resume plan #2.
-- Basic panel color output after radio + mesh startup is confirmed in the
-  isolation test; the real UI is not visually confirmed. Still unverified:
-  two-node message round-trip, battery-gauge readings, LEDC warnings (the
-  `LEDC is not initialized` error remains in display isolation), and I2C at
-  100 kHz re-test.
+- Basic panel color output and the production empty-Inbox text are confirmed
+  after radio + mesh startup (LifeCam manual-exposure evidence attached to the
+  latest issue reply). Still unverified: two-node message round-trip,
+  battery-gauge readings, LEDC warnings (the `LEDC is not initialized` error
+  remains in display isolation), and I2C at 100 kHz re-test.

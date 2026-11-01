@@ -404,6 +404,50 @@ static void render() {
   else if(screen==ADD_CHANNEL){drawStatusBar();renderAddChannel();}
   display.endFrame();
 }
+#ifdef PAGER_DEBUG
+static void holdDisplayBisectFrame() {
+  uint32_t until = millis() + 2200;
+  while ((int32_t)(millis() - until) < 0) {
+    pager_mesh.loop();
+    delay(5);
+  }
+}
+static void runDisplayBisect() {
+  pagerStartupLog("display bisect 1/5: full-screen RGB565 fill, no font/partial draw");
+  display.startFrame(C_BG);
+  display.setColor(0xF800);
+  display.fillRect(0, 0, display.width(), display.height());
+  display.endFrame();
+  holdDisplayBisectFrame();
+
+  pagerStartupLog("display bisect 2/5: production status bar");
+  display.startFrame(C_BG);
+  drawStatusBar();
+  display.endFrame();
+  holdDisplayBisectFrame();
+
+  pagerStartupLog("display bisect 3/5: status bar + partial inbox frame, no inbox text");
+  display.startFrame(C_BG);
+  drawStatusBar();
+  display.setColor(C_LINE);
+  display.drawRect(8, 32, 464, 180);
+  display.endFrame();
+  holdDisplayBisectFrame();
+
+  pagerStartupLog("display bisect 4/5: add production empty-inbox text");
+  display.startFrame(C_BG);
+  drawStatusBar();
+  display.setColor(C_LINE);
+  display.drawRect(8, 32, 464, 180);
+  renderInbox();
+  display.endFrame();
+  holdDisplayBisectFrame();
+
+  pagerStartupLog("display bisect 5/5: exact production render() frame");
+  render();
+  holdDisplayBisectFrame();
+}
+#endif
 static void wake() { last_input=millis(); if(screen_off){screen_off=false;display.turnOn();keyboard.setBacklight(settings.keyboard_light?settings.brightness*255/100:0);render();} }
 static void changeScreen(Screen s){saved_selection[screen]=selection;screen=s;selection=saved_selection[s];symbol_mode=false;setting_edit=false;if(s==COMPOSE){compose_focus=(recipient_idx>=0||recipient_idx==-2)?1:0;caret=draft_len;}render();}
 static void saveDraftAndHome(){ changeScreen(INBOX); }
@@ -607,6 +651,11 @@ void setup() {
   }
   display.setBrightness(settings.brightness*255/100);
   keyboard.setBacklight(settings.keyboard_light?settings.brightness*255/100:0);
+#ifdef PAGER_DEBUG
+  log_e("[pager] display config: SPI2_HOST ST7796 222x480 offset=(49,0) rotation=3 RGB565 PSRAM sprite");
+  log_e("[pager] display geometry: logical=%dx%d panel=%dx%d framebuffer=%s", display.width(), display.height(), display.panelWidth(), display.panelHeight(), display.framebufferReady()?"PSRAM ready":"missing");
+  runDisplayBisect();
+#endif
   display.startFrame(C_BG);drawText(170,86,"MESH PAGER");drawText(210,112,"v0.1.0",true,C_DIM);display.endFrame();
   pagerStartupLog("display ready; drawing inbox");
   last_seen_message_serial=pager_mesh.messageSerial();

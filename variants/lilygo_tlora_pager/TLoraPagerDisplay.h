@@ -126,9 +126,16 @@ public:
 
     buffer.setColorDepth(16);
     buffer.setPsram(true);
-    buffer.createSprite(display->width(), display->height());
+    if (!buffer.createSprite(display->width(), display->height())) {
+      _isOn = false;
+      return false;
+    }
 
     _isOn = true;
     return true;
   }
+
+  bool framebufferReady() const { return buffer.getBuffer() != nullptr; }
+  int panelWidth() const { return display->width(); }
+  int panelHeight() const { return display->height(); }
 };
