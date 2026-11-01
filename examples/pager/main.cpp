@@ -472,8 +472,55 @@ static void back() {
 
 void setup() {
   Serial.begin(115200);
-  pagerStartupLog("board init");
   board.begin();
+#ifdef PAGER_DISPLAY_ISOLATION
+  static const ColorVal test_colors[] = {0xF800, 0x07E0, 0x001F, 0xFFFF, 0x0000};
+  if(!display.begin()) {
+    log_e("display isolation: initial display.begin failed");
+    return;
+  }
+  for(uint8_t i=0;i<5;i++) {
+    display.startFrame(C_BG); display.setColor(test_colors[i]);
+    display.fillRect(0,0,display.width(),display.height()); display.endFrame();
+    log_e("display isolation pre-radio frame %u color=0x%04X", i, test_colors[i]);
+    delay(1200);
+  }
+
+  log_e("display isolation: starting radio init");
+  bool radio_ok=radio_init();
+  log_e("display isolation: radio init %s", radio_ok ? "ok" : "failed");
+  for(uint8_t i=0;i<5;i++) {
+    display.startFrame(C_BG); display.setColor(test_colors[i]);
+    display.fillRect(0,0,display.width(),display.height()); display.endFrame();
+    log_e("display isolation radio/no-CS frame %u color=0x%04X", i, test_colors[i]);
+    delay(1200);
+  }
+
+  pinMode(P_LORA_NSS, OUTPUT);
+  digitalWrite(P_LORA_NSS, HIGH); // explicitly deselect SX1262
+  for(uint8_t i=0;i<5;i++) {
+    display.startFrame(C_BG); display.setColor(test_colors[i]);
+    display.fillRect(0,0,display.width(),display.height()); display.endFrame();
+    log_e("display isolation radio/CS-high frame %u color=0x%04X", i, test_colors[i]);
+    delay(1200);
+  }
+
+  log_e("display isolation: reinitializing ST7796 after radio init");
+  display.turnOff();
+  if(!display.begin()) {
+    log_e("display isolation: post-radio display.begin failed");
+    return;
+  }
+  uint8_t color_idx=0;
+  while(true) {
+    display.startFrame(C_BG); display.setColor(test_colors[color_idx]);
+    display.fillRect(0,0,display.width(),display.height()); display.endFrame();
+    log_e("display isolation reinit frame %u color=0x%04X", color_idx, test_colors[color_idx]);
+    color_idx=(color_idx+1)%(sizeof(test_colors)/sizeof(test_colors[0]));
+    delay(1200);
+  }
+#endif
+  pagerStartupLog("board init complete");
   if(!display.begin()) { pagerStartupLog("display init failed"); return; }
   keyboard.begin();rotary.begin();user_btn.begin();rotary_center.begin();
   settings.brightness=64;settings.keyboard_light=1;
@@ -509,9 +556,10 @@ void setup() {
   if(!pager_mesh.getChannel(settings.current_channel,selected_channel)||!selected_channel.name[0]){
     for(uint8_t i=0;i<MAX_GROUP_CHANNELS;i++){if(pager_mesh.getChannel(i,selected_channel)&&selected_channel.name[0]){pager_mesh.setCurrentChannel(i);settings.current_channel=i;saveUISettings();break;}}
   }
-  // RadioLib initializes the shared SPI host after the panel splash. Re-init
-  // the ST7796 once more afterward so its bus/panel state is valid for UI frames.
+  // RadioLib initializes the shared SPI host after the panel splash. Sleep
+  // the panel, then wake/reinitialize it so later frames reach the ST7796.
   pagerStartupLog("reinitializing display after radio startup");
+  display.turnOff();
   if(!display.begin()) {
     pagerStartupLog("display reinit failed");
     drawStartupFailure("DISPLAY REINIT FAILED");

@@ -2,7 +2,7 @@
 
 This app builds as `env:LilyGo_TLoRaPager_pager` on the Stage 2 T-LoRa Pager variant. It uses `BaseChatMesh` for private and group messaging, the variant's interrupt-driven TCA8418 keyboard and rotary input, and the ST7796 display through `LGFXDisplay`.
 
-For diagnostics, `env:LilyGo_TLoRaPager_pager_debug` routes `Serial` to native USB CDC, waits briefly for the console connection, disables the screen timeout, and prints startup-stage diagnostics. Use `/dev/ttyACM*` for this environment; the normal pager environment keeps the CP210x UART console.
+For diagnostics, `env:LilyGo_TLoRaPager_pager_debug` routes `Serial` to native USB CDC, disables the screen timeout, and prints startup-stage diagnostics through ESP-IDF logs. Use `/dev/ttyACM*` for this environment; the normal pager environment keeps the CP210x UART console. `env:LilyGo_TLoRaPager_display_test` isolates the ST7796 path: it cycles solid RGB565 fills before radio init, after radio init without touching LoRa CS, after radio init with LoRa CS forced high, and after a post-radio display reinit. This separates panel/power issues from shared-SPI/CS issues.
 
 ## Persistent state
 

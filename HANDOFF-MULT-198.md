@@ -4,7 +4,7 @@
 
 - Both pager PRs remain merged to `main`; repo at merge commit `93357c65`.
 - The I2C/keyboard fixes (address 0x34, gate setup, probe/poll fallback, and scan app) are committed to `main` at `13ab974d`.
-- Paid Coder's follow-up stage-log change is being prepared on branch `agent/paid-coder/MULT-198-diagnostics`; it routes debug startup messages through `log_e` so they appear on the native USB-JTAG console.
+- Paid Coder's follow-up diagnostics and display-isolation test are on branch `agent/paid-coder/MULT-198-diagnostics` (PR #3 pending). Startup stage messages route through `log_e` so they appear on the native USB-JTAG console.
 
 ## What was found
 
@@ -184,6 +184,18 @@ whether the latest `log_e` instrumentation appears on the next boot.
 The current USB-reset boot also reports the keyboard absent at 0x34, while the
 power-button boot previously verified live key input there. Ensure the next
 keyboard test uses the battery/power-button rail state.
+
+## Display isolation test (Paid Coder, Nov 1)
+
+New env `LilyGo_TLoRaPager_display_test` was flashed over USB-JTAG. The display
+showed cycling solid RGB565 colors before radio initialization. After radio
+initialization, frames stopped changing both before and after forcing SX1262
+CS high. Cycling colors resumed after `display.turnOff()` + `display.begin()`.
+This isolates the panel as capable of output and shows that radio setup leaves
+its SPI/panel state requiring a full sleep/re-init; CS high alone was not
+sufficient. The test bypasses mesh and keyboard. The full UI currently performs
+that sleep/re-init before drawing Inbox, but webcam confirmation of legible UI
+text is still outstanding.
 
 ## Verification status
 
