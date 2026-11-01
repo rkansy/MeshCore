@@ -3,13 +3,8 @@
 ## Repository state
 
 - Both pager PRs remain merged to `main`; repo at merge commit `93357c65`.
-- **This session's fixes are uncommitted in the working tree** (`git status`):
-  - `src/helpers/AutoDiscoverRTCClock.cpp` — RX8130CE probe behind `DISABLE_RX8130CE_PROBE`
-  - `src/helpers/ESP32Board.h` — optional `PIN_BOARD_I2C_FREQ` for `Wire.begin`
-  - `src/helpers/ui/TCA8418Keyboard.{h,cpp}` — presence probe in `begin()`, graceful degrade
-  - `variants/lilygo_tlora_pager/TLoraPagerBoard.cpp` — XL9555 gate init + gauge NAK check
-  - `variants/lilygo_tlora_pager/platformio.ini` — 400 kHz I2C, `DISABLE_RX8130CE_PROBE`, new `LilyGo_TLoRaPager_pager_i2cscan` diagnostic env
-  - `examples/i2c_scan/` — new on-device I2C diagnostic app (untracked)
+- The I2C/keyboard fixes (address 0x34, gate setup, probe/poll fallback, and scan app) are committed to `main` at `13ab974d`.
+- Paid Coder's follow-up diagnostics and display-isolation test are on branch `agent/paid-coder/MULT-198-diagnostics` (PR #3 pending). Startup stage messages route through `log_e` so they appear on the native USB-JTAG console.
 
 ## What was found
 
@@ -154,6 +149,61 @@ Keyboard input is verified working (see #3). Remaining, in order:
   across USB unplug when the battery is charged, so "Saved PC" values in
   boot logs are not a reliable freshness signal).
 
+## Latest startup trace (Paid Coder, Nov 1)
+
+The native USB-JTAG logs are now visible with `log_e` stage messages. The latest
+production-debug boot shows board init, TCA8418 probe at 0x34, radio init OK,
+mesh start OK, display init, and `inbox frame complete`. Setup is not stopping;
+the renderer returns on the empty Inbox. OpenOCD readback at `0x10000` matches
+the current debug image SHA-256 exactly. The previous LifeCam view was saturated
+white under auto exposure; locking exposure manually reveals the display content
+and the Inbox text.
+
+The latest USB-JTAG reset sees the TCA8418 at 0x34 and has no LEDC or I2C
+read error in the production startup trace (it reports a duplicate APB callback).
+The `LEDC is not initialized` warning appeared in earlier isolation runs and
+remains a separate follow-up.
+
+## Shared-SPI diagnosis and display tests (Paid Coder, Nov 1)
+
+The default Arduino `SPIClass()` selects HSPI/SPI3 on ESP32-S3, while the
+ST7796 uses `SPI2_HOST` on the same physical wires. MeshCore now uses
+`SPIClass lora_spi(FSPI)` (Arduino FSPI maps to the SPI2 peripheral), drives
+LoRa/TFT/SD CS high before initialization, and initializes radio + `PagerMesh`
+before the panel. This matches Meshtastic's host/init ordering.
+
+- `LilyGo_TLoRaPager_display_test` showed solid fills before radio init; fills
+  stopped visibly changing after radio init, including with SX1262 CS forced
+  high, then resumed after panel sleep/reinit.
+- `LilyGo_TLoRaPager_display_radio_first` initializes radio before the ST7796;
+  radio init succeeds and the panel color test runs.
+- `LilyGo_TLoRaPager_display_mesh_test` starts `PagerMesh` (including its boot
+  advert) before panel init, then fills colors while the mesh loop runs. The
+  camera clip shows color changes through this sequence, so basic panel output
+  survives mesh/radio startup in this order.
+
+## Production render-path bisection (Paid Coder, Nov 1)
+
+`pager_debug` now performs five stages after radio + mesh startup: (1) a
+full-screen RGB565 red fill with no font/partial draw, (2) the production status
+bar, (3) status bar plus an inbox-area frame without inbox text, (4) the frame
+plus the production empty-Inbox text, and (5) the exact production `render()`
+frame. USB-JTAG logs reached all five stages and then `inbox frame complete`.
+The LifeCam video shows the red fill and subsequent UI output; the final still
+shows the empty-Inbox text when the camera exposure is locked. The earlier white
+blank appearance was an auto-exposure artifact, not a failed panel update.
+
+Production and isolation builds share `TLoraPagerDisplay::begin()`: ST7796 on
+SPI2, native 222x480, offset (49,0), rotation 3, 16-bit PSRAM sprite. The driver
+now checks the sprite allocation; the boot log reports logical/panel dimensions
+480x222 and `PSRAM ready`. `LGFXDisplay::endFrame()` pushes the full sprite at
+(0,0), so UI `fillRect` calls are framebuffer drawing rather than physical
+partial-window transfers. The full-screen fill verifies the full panel window
+after radio rebind; the status bar, frame, text, and production render all
+follow, with no breaking operation found. The still is small/rotated in the
+webcam view but confirms a nonblank Inbox. LEDC errors remain on the follow-up
+list; none appeared in this production-debug log.
+
 ## Verification status
 
 - `pio test -e native -e native_kiss_modem`: 54 passed.
@@ -161,6 +211,8 @@ Keyboard input is verified working (see #3). Remaining, in order:
 - Keyboard: PROBE + KEY INPUT VERIFIED at 0x34 (user keypress advanced the
   pager UI; shift-modifier key also tested). Remaining key-matrix details in
   resume plan #2.
-- Still unverified: radio/display SPI sharing, two-node message round-trip,
-  battery-gauge readings, LEDC warnings (display backlight path, `E (897)
-  ledc: LEDC is not initialized` remains), I2C at 100 kHz re-test.
+- Basic panel color output and the production empty-Inbox text are confirmed
+  after radio + mesh startup (LifeCam manual-exposure evidence attached to the
+  latest issue reply). Still unverified: two-node message round-trip,
+  battery-gauge readings, LEDC warnings (the `LEDC is not initialized` error
+  remains in display isolation), and I2C at 100 kHz re-test.

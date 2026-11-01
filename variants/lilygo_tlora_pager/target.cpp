@@ -3,10 +3,10 @@
 
 TLoraPagerBoard board;
 
-// The SX1262 and ST7796 share the same physical SPI bus (SCK 35, MOSI 34,
-// MISO 33) but use separate chip-select lines, so the radio and display are
-// each initialised on the shared host with their own pins.
-static SPIClass lora_spi;
+// The SX1262 and ST7796 share the same wires and ESP32-S3 SPI2 controller.
+// Select Arduino FSPI (SPI2_HOST) explicitly; SPIClass' default HSPI selects
+// SPI3_HOST on S3 and makes two controllers drive the same physical wires.
+static SPIClass lora_spi(FSPI);
 RADIO_CLASS radio = new Module(P_LORA_NSS, P_LORA_DIO_1, P_LORA_RESET, P_LORA_BUSY, lora_spi);
 WRAPPER_CLASS radio_driver(radio, board);
 

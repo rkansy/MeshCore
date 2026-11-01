@@ -115,6 +115,8 @@ public:
   void setBrightness(uint8_t brightness) { display->setBrightness(brightness); }
 
   bool begin() {
+    pinMode(PIN_ST7796_CS, OUTPUT);
+    digitalWrite(PIN_ST7796_CS, HIGH); // keep the panel deselected while the radio shares SPI
     turnOn();
     display->init();
     display->setRotation(0);        // base 0 + offset_rotation 3 => landscape
@@ -124,9 +126,16 @@ public:
 
     buffer.setColorDepth(16);
     buffer.setPsram(true);
-    buffer.createSprite(display->width(), display->height());
+    if (!buffer.createSprite(display->width(), display->height())) {
+      _isOn = false;
+      return false;
+    }
 
     _isOn = true;
     return true;
   }
+
+  bool framebufferReady() const { return buffer.getBuffer() != nullptr; }
+  int panelWidth() const { return display->width(); }
+  int panelHeight() const { return display->height(); }
 };

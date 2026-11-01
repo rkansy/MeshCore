@@ -4,6 +4,13 @@
 #include <Arduino.h>
 #include "helpers/ESP32Board.h"
 
+#ifndef PIN_ST7796_CS
+  #define PIN_ST7796_CS 38
+#endif
+#ifndef PIN_SD_CS
+  #define PIN_SD_CS 21
+#endif
+
 // BQ27220 fuel-gauge I2C address (see mverch67/BQ27220 / BQ27220_I2C_ADDRESS).
 #ifndef BQ27220_I2C_ADDR
   #define BQ27220_I2C_ADDR 0x55
