@@ -287,6 +287,18 @@ static void pagerStartupLog(const char* message) {
   Serial.printf("[pager] %s\n", message);
 #endif
 }
+#if defined(PAGER_DISPLAY_ISOLATION) || defined(PAGER_DISPLAY_RADIO_FIRST) || defined(PAGER_DISPLAY_MESH_ISOLATION)
+static void drawDisplayIsolationFrame(ColorVal color) {
+  display.startFrame(C_BG);
+  display.setColor(color);
+  display.fillRect(0,0,display.width(),display.height());
+  display.setColor(color==0x0000 || color==0xF800 || color==0x001F ? 0xFFFF : C_INK);
+  display.setTextSize(2);
+  display.setCursor(12,12);
+  display.print("PANEL TEST");
+  display.endFrame();
+}
+#endif
 static void drawStartupFailure(const char* stage) {
   display.startFrame(C_BG);
   drawText(12,75,"STARTUP FAILED",false,C_ACCENT);
@@ -473,6 +485,44 @@ static void back() {
 void setup() {
   Serial.begin(115200);
   board.begin();
+#ifdef PAGER_DISPLAY_MESH_ISOLATION
+  static const ColorVal test_colors[] = {0xF800, 0x07E0, 0x001F, 0xFFFF, 0x0000};
+  pagerStartupLog("display/mesh isolation: board init complete; starting radio and mesh");
+  SPIFFS.begin(false);
+  if(!radio_init()) { log_e("display/mesh isolation: radio init failed"); return; }
+  pager_rng.begin(radio_driver.getRngSeed());
+  if(!pager_mesh.start()) { log_e("display/mesh isolation: mesh start failed"); return; }
+  if(!display.begin()) { log_e("display/mesh isolation: display init failed"); return; }
+  log_e("display/mesh isolation: display started after mesh; monitor color fills across TX");
+  uint32_t last_draw=0;
+  uint8_t color_idx=0;
+  while(true) {
+    pager_mesh.loop();
+    if(millis()-last_draw>=1200) {
+      last_draw=millis();
+      drawDisplayIsolationFrame(test_colors[color_idx]);
+      log_e("display/mesh isolation frame %u color=0x%04X", color_idx, test_colors[color_idx]);
+      color_idx=(color_idx+1)%(sizeof(test_colors)/sizeof(test_colors[0]));
+    }
+    delay(5);
+  }
+#endif
+#ifdef PAGER_DISPLAY_RADIO_FIRST
+  static const ColorVal test_colors[] = {0xF800, 0x07E0, 0x001F, 0xFFFF, 0x0000};
+  pagerStartupLog("radio-first isolation: starting radio before panel");
+  bool radio_ok=radio_init();
+  pagerStartupLog(radio_ok ? "radio-first isolation: radio ok" : "radio-first isolation: radio failed");
+  pinMode(P_LORA_NSS, OUTPUT);
+  digitalWrite(P_LORA_NSS, HIGH);
+  if(!display.begin()) { log_e("radio-first isolation: display.begin failed"); return; }
+  uint8_t color_idx=0;
+  while(true) {
+    drawDisplayIsolationFrame(test_colors[color_idx]);
+    log_e("radio-first isolation frame %u color=0x%04X", color_idx, test_colors[color_idx]);
+    color_idx=(color_idx+1)%(sizeof(test_colors)/sizeof(test_colors[0]));
+    delay(1200);
+  }
+#endif
 #ifdef PAGER_DISPLAY_ISOLATION
   static const ColorVal test_colors[] = {0xF800, 0x07E0, 0x001F, 0xFFFF, 0x0000};
   if(!display.begin()) {
@@ -480,8 +530,7 @@ void setup() {
     return;
   }
   for(uint8_t i=0;i<5;i++) {
-    display.startFrame(C_BG); display.setColor(test_colors[i]);
-    display.fillRect(0,0,display.width(),display.height()); display.endFrame();
+    drawDisplayIsolationFrame(test_colors[i]);
     log_e("display isolation pre-radio frame %u color=0x%04X", i, test_colors[i]);
     delay(1200);
   }
@@ -490,8 +539,7 @@ void setup() {
   bool radio_ok=radio_init();
   log_e("display isolation: radio init %s", radio_ok ? "ok" : "failed");
   for(uint8_t i=0;i<5;i++) {
-    display.startFrame(C_BG); display.setColor(test_colors[i]);
-    display.fillRect(0,0,display.width(),display.height()); display.endFrame();
+    drawDisplayIsolationFrame(test_colors[i]);
     log_e("display isolation radio/no-CS frame %u color=0x%04X", i, test_colors[i]);
     delay(1200);
   }
@@ -499,8 +547,7 @@ void setup() {
   pinMode(P_LORA_NSS, OUTPUT);
   digitalWrite(P_LORA_NSS, HIGH); // explicitly deselect SX1262
   for(uint8_t i=0;i<5;i++) {
-    display.startFrame(C_BG); display.setColor(test_colors[i]);
-    display.fillRect(0,0,display.width(),display.height()); display.endFrame();
+    drawDisplayIsolationFrame(test_colors[i]);
     log_e("display isolation radio/CS-high frame %u color=0x%04X", i, test_colors[i]);
     delay(1200);
   }
@@ -513,20 +560,18 @@ void setup() {
   }
   uint8_t color_idx=0;
   while(true) {
-    display.startFrame(C_BG); display.setColor(test_colors[color_idx]);
-    display.fillRect(0,0,display.width(),display.height()); display.endFrame();
+    drawDisplayIsolationFrame(test_colors[color_idx]);
     log_e("display isolation reinit frame %u color=0x%04X", color_idx, test_colors[color_idx]);
     color_idx=(color_idx+1)%(sizeof(test_colors)/sizeof(test_colors[0]));
     delay(1200);
   }
 #endif
-  pagerStartupLog("board init complete");
-  if(!display.begin()) { pagerStartupLog("display init failed"); return; }
+  pagerStartupLog("board init complete; starting keyboard");
   keyboard.begin();rotary.begin();user_btn.begin();rotary_center.begin();
   settings.brightness=64;settings.keyboard_light=1;
   if(!SPIFFS.begin(true)) {
     pagerStartupLog("SPIFFS mount failed");
-    drawStartupFailure("SPIFFS MOUNT FAILED");
+    if(display.begin()) drawStartupFailure("SPIFFS MOUNT FAILED");
     return;
   }
   File config=SPIFFS.open("/pager.cfg","r"); if(config){PagerSettings loaded;if(config.read((uint8_t*)&loaded,sizeof(loaded))==sizeof(loaded)&&loaded.magic==SETTINGS_MAGIC)settings=loaded;config.close();}
@@ -535,19 +580,18 @@ void setup() {
 #ifdef PAGER_DEBUG
   settings.screen_timeout=5; // keep the display awake while collecting boot diagnostics
 #endif
-  display.setBrightness(settings.brightness*255/100);keyboard.setBacklight(settings.keyboard_light?settings.brightness*255/100:0);
-  display.startFrame(C_BG);drawText(170,86,"MESH PAGER");drawText(210,112,"v0.1.0",true,C_DIM);display.endFrame();
-  pagerStartupLog("radio init");
+  keyboard.setBacklight(settings.keyboard_light?settings.brightness*255/100:0);
+  pagerStartupLog("radio init before display (shared SPI2/FSPI)");
   if(!radio_init()) {
     pagerStartupLog("radio init failed");
-    drawStartupFailure("RADIO INIT FAILED");
+    if(display.begin()) drawStartupFailure("RADIO INIT FAILED");
     return;
   }
-  pagerStartupLog("radio init ok; starting mesh");
+  pagerStartupLog("radio init ok; starting mesh before panel init");
   pager_rng.begin(radio_driver.getRngSeed());
   if(!pager_mesh.start()) {
     pagerStartupLog("mesh/storage init failed");
-    drawStartupFailure("MESH START FAILED");
+    if(display.begin()) drawStartupFailure("MESH START FAILED");
     return;
   }
   pagerStartupLog("mesh start ok");
@@ -556,15 +600,14 @@ void setup() {
   if(!pager_mesh.getChannel(settings.current_channel,selected_channel)||!selected_channel.name[0]){
     for(uint8_t i=0;i<MAX_GROUP_CHANNELS;i++){if(pager_mesh.getChannel(i,selected_channel)&&selected_channel.name[0]){pager_mesh.setCurrentChannel(i);settings.current_channel=i;saveUISettings();break;}}
   }
-  // RadioLib initializes the shared SPI host after the panel splash. Sleep
-  // the panel, then wake/reinitialize it so later frames reach the ST7796.
-  pagerStartupLog("reinitializing display after radio startup");
-  display.turnOff();
+  pagerStartupLog("mesh startup complete; initializing ST7796 on shared SPI2");
   if(!display.begin()) {
-    pagerStartupLog("display reinit failed");
-    drawStartupFailure("DISPLAY REINIT FAILED");
+    pagerStartupLog("display init failed after mesh startup");
     return;
   }
+  display.setBrightness(settings.brightness*255/100);
+  keyboard.setBacklight(settings.keyboard_light?settings.brightness*255/100:0);
+  display.startFrame(C_BG);drawText(170,86,"MESH PAGER");drawText(210,112,"v0.1.0",true,C_DIM);display.endFrame();
   pagerStartupLog("display ready; drawing inbox");
   last_seen_message_serial=pager_mesh.messageSerial();
   last_input=millis();render();

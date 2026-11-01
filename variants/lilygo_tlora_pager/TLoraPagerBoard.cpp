@@ -52,6 +52,16 @@ static void xl9555_init() {
 void TLoraPagerBoard::begin() {
   ESP32Board::begin();  // starts Wire on PIN_BOARD_SDA/PIN_BOARD_SCL
 
+  // Match Meshtastic earlyInitVariant(): keep all SPI peripherals deselected
+  // before either the radio or ST7796 configures the shared SPI2 wires.
+#ifdef P_LORA_NSS
+  pinMode(P_LORA_NSS, OUTPUT);
+  digitalWrite(P_LORA_NSS, HIGH);
+#endif
+  pinMode(PIN_ST7796_CS, OUTPUT);
+  digitalWrite(PIN_ST7796_CS, HIGH);
+  pinMode(PIN_SD_CS, OUTPUT);
+  digitalWrite(PIN_SD_CS, HIGH);
   xl9555_init();
 
 #if defined(PIN_USER_BTN)

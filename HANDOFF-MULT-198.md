@@ -149,53 +149,43 @@ Keyboard input is verified working (see #3). Remaining, in order:
   across USB unplug when the battery is charged, so "Saved PC" values in
   boot logs are not a reliable freshness signal).
 
-## Latest startup trace (Paid Coder, Oct 27)
+## Latest startup trace (Paid Coder, Nov 1)
 
-The running app image was read back from flash at `0x10000` and its SHA-256
-matched the freshly built `LilyGo_TLoRaPager_pager_debug/firmware.bin` exactly.
-After a JTAG reset, `log_e` stage messages showed:
+The native USB-JTAG logs are now visible with `log_e` stage messages. The latest
+production-debug boot shows board init, TCA8418 probe at 0x34, radio init OK,
+mesh start OK, display init, and `inbox frame complete`. Setup is not stopping;
+the renderer returns on the empty Inbox. OpenOCD readback at `0x10000` matches
+the current debug image SHA-256 exactly. The webcam view is still a bright white
+panel with no legible UI text, so physical Inbox presentation needs confirmation.
 
-- board init
-- TCA8418 probe **not present at 0x34** in this USB-reset power state
-- radio init OK; mesh start OK
-- display reinitialized after radio startup
-- `display ready; drawing inbox`
-- `inbox frame complete`
+LEDC warnings remain in isolation runs; the production boot after the SPI/order
+change did not emit them. I2C read errors may be related to the current USB-reset
+power state; keyboard presence depends on the peripheral power rails.
 
-Thus setup does not stop at radio or mesh init; the frame-render function
-returns. The webcam view after this run was a white/overexposed panel with no
-readable text, so visible Inbox rendering is not yet confirmed. The current
-USB-reset state may leave the keyboard's battery rail/gates off; use the
-power-button boot state before concluding the keyboard is faulty.
+## Shared-SPI diagnosis and display tests (Paid Coder, Nov 1)
 
-The LEDC-not-initialized warnings still occur before the TCA probe and are
-separate from startup completion; investigate the LovyanGFX display backlight
-(pin 42 / PWM channel 7) as well as keyboard PWM. Serial stage diagnostics now
-use `log_e` in `PAGER_DEBUG`, so they appear on the native USB-JTAG console.
+The default Arduino `SPIClass()` selects HSPI/SPI3 on ESP32-S3, while the
+ST7796 uses `SPI2_HOST` on the same physical wires. MeshCore now uses
+`SPIClass lora_spi(FSPI)` (Arduino FSPI maps to the SPI2 peripheral), drives
+LoRa/TFT/SD CS high before initialization, and initializes radio + `PagerMesh`
+before the panel. This matches Meshtastic's host/init ordering.
 
-OpenOCD readback of the complete app image at offset `0x10000` matched the
-fresh debug build SHA-256 exactly. The latest USB-reset trace reached
-`inbox frame complete`, proving startup and the renderer return; the owner
-still reports the splash, while the LifeCam frame shows a bright blank panel
-with no readable text. This points to ST7796 refresh/shared-SPI behavior after
-radio startup rather than a failure in radio or mesh initialization. Verify
-whether the latest `log_e` instrumentation appears on the next boot.
+- `LilyGo_TLoRaPager_display_test` showed solid fills before radio init; fills
+  stopped visibly changing after radio init, including with SX1262 CS forced
+  high, then resumed after panel sleep/reinit.
+- `LilyGo_TLoRaPager_display_radio_first` initializes radio before the ST7796;
+  radio init succeeds and the panel color test runs.
+- `LilyGo_TLoRaPager_display_mesh_test` starts `PagerMesh` (including its boot
+  advert) before panel init, then fills colors while the mesh loop runs. The
+  camera clip shows color changes through this sequence, so basic panel output
+  survives mesh/radio startup in this order.
 
-The current USB-reset boot also reports the keyboard absent at 0x34, while the
-power-button boot previously verified live key input there. Ensure the next
-keyboard test uses the battery/power-button rail state.
-
-## Display isolation test (Paid Coder, Nov 1)
-
-New env `LilyGo_TLoRaPager_display_test` was flashed over USB-JTAG. The display
-showed cycling solid RGB565 colors before radio initialization. After radio
-initialization, frames stopped changing both before and after forcing SX1262
-CS high. Cycling colors resumed after `display.turnOff()` + `display.begin()`.
-This isolates the panel as capable of output and shows that radio setup leaves
-its SPI/panel state requiring a full sleep/re-init; CS high alone was not
-sufficient. The test bypasses mesh and keyboard. The full UI currently performs
-that sleep/re-init before drawing Inbox, but webcam confirmation of legible UI
-text is still outstanding.
+The production debug firmware logs `radio init ok`, `mesh start ok`, and
+`inbox frame complete`; setup is not dying. The webcam still shows a bright
+white panel with no legible Inbox text, so the real UI's rendered contents
+remain unconfirmed. Compare the production render path against the successful
+solid-fill test. LEDC errors remain in isolation tests; the latest production
+boot showed I2C read errors and the TCA probe at 0x34.
 
 ## Verification status
 
@@ -204,6 +194,8 @@ text is still outstanding.
 - Keyboard: PROBE + KEY INPUT VERIFIED at 0x34 (user keypress advanced the
   pager UI; shift-modifier key also tested). Remaining key-matrix details in
   resume plan #2.
-- Still unverified: radio/display SPI sharing, two-node message round-trip,
-  battery-gauge readings, LEDC warnings (display backlight path, `E (897)
-  ledc: LEDC is not initialized` remains), I2C at 100 kHz re-test.
+- Basic panel color output after radio + mesh startup is confirmed in the
+  isolation test; the real UI is not visually confirmed. Still unverified:
+  two-node message round-trip, battery-gauge readings, LEDC warnings (the
+  `LEDC is not initialized` error remains in display isolation), and I2C at
+  100 kHz re-test.
