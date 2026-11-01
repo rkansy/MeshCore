@@ -66,7 +66,7 @@ bool TCA8418Keyboard::begin(TwoWire &wire) {
   if (_backlight_initialized) {
     ledcAttachPin(_bl_pin, LEDC_BACKLIGHT_CHANNEL);
   } else {
-    Serial.println("TCA8418: keyboard backlight PWM unavailable");
+    log_e("TCA8418: keyboard backlight PWM unavailable on GPIO %d", _bl_pin);
   }
 
   // Probe the controller: presence is "ACKs a register read". Do NOT require

@@ -3,13 +3,8 @@
 ## Repository state
 
 - Both pager PRs remain merged to `main`; repo at merge commit `93357c65`.
-- **This session's fixes are uncommitted in the working tree** (`git status`):
-  - `src/helpers/AutoDiscoverRTCClock.cpp` — RX8130CE probe behind `DISABLE_RX8130CE_PROBE`
-  - `src/helpers/ESP32Board.h` — optional `PIN_BOARD_I2C_FREQ` for `Wire.begin`
-  - `src/helpers/ui/TCA8418Keyboard.{h,cpp}` — presence probe in `begin()`, graceful degrade
-  - `variants/lilygo_tlora_pager/TLoraPagerBoard.cpp` — XL9555 gate init + gauge NAK check
-  - `variants/lilygo_tlora_pager/platformio.ini` — 400 kHz I2C, `DISABLE_RX8130CE_PROBE`, new `LilyGo_TLoRaPager_pager_i2cscan` diagnostic env
-  - `examples/i2c_scan/` — new on-device I2C diagnostic app (untracked)
+- The I2C/keyboard fixes (address 0x34, gate setup, probe/poll fallback, and scan app) are committed to `main` at `13ab974d`.
+- Paid Coder's follow-up stage-log change is being prepared on branch `agent/paid-coder/MULT-198-diagnostics`; it routes debug startup messages through `log_e` so they appear on the native USB-JTAG console.
 
 ## What was found
 
@@ -153,6 +148,42 @@ Keyboard input is verified working (see #3). Remaining, in order:
   `esptool.py read_flash 0x10000 ...` and comparing md5 (the S3 persists
   across USB unplug when the battery is charged, so "Saved PC" values in
   boot logs are not a reliable freshness signal).
+
+## Latest startup trace (Paid Coder, Oct 27)
+
+The running app image was read back from flash at `0x10000` and its SHA-256
+matched the freshly built `LilyGo_TLoRaPager_pager_debug/firmware.bin` exactly.
+After a JTAG reset, `log_e` stage messages showed:
+
+- board init
+- TCA8418 probe **not present at 0x34** in this USB-reset power state
+- radio init OK; mesh start OK
+- display reinitialized after radio startup
+- `display ready; drawing inbox`
+- `inbox frame complete`
+
+Thus setup does not stop at radio or mesh init; the frame-render function
+returns. The webcam view after this run was a white/overexposed panel with no
+readable text, so visible Inbox rendering is not yet confirmed. The current
+USB-reset state may leave the keyboard's battery rail/gates off; use the
+power-button boot state before concluding the keyboard is faulty.
+
+The LEDC-not-initialized warnings still occur before the TCA probe and are
+separate from startup completion; investigate the LovyanGFX display backlight
+(pin 42 / PWM channel 7) as well as keyboard PWM. Serial stage diagnostics now
+use `log_e` in `PAGER_DEBUG`, so they appear on the native USB-JTAG console.
+
+OpenOCD readback of the complete app image at offset `0x10000` matched the
+fresh debug build SHA-256 exactly. The latest USB-reset trace reached
+`inbox frame complete`, proving startup and the renderer return; the owner
+still reports the splash, while the LifeCam frame shows a bright blank panel
+with no readable text. This points to ST7796 refresh/shared-SPI behavior after
+radio startup rather than a failure in radio or mesh initialization. Verify
+whether the latest `log_e` instrumentation appears on the next boot.
+
+The current USB-reset boot also reports the keyboard absent at 0x34, while the
+power-button boot previously verified live key input there. Ensure the next
+keyboard test uses the battery/power-button rail state.
 
 ## Verification status
 

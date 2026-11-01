@@ -280,6 +280,13 @@ static void showStatus(const char* msg, uint32_t duration=1000) { StrHelper::str
 static void drawText(int x, int y, const char* text, bool small=false, ColorVal color=C_INK) {
   display.setColor(color); display.setTextSize(small ? 1 : 2); display.setCursor(x,y); display.print(text);
 }
+static void pagerStartupLog(const char* message) {
+#ifdef PAGER_DEBUG
+  log_e("[pager] %s", message);
+#else
+  Serial.printf("[pager] %s\n", message);
+#endif
+}
 static void drawStartupFailure(const char* stage) {
   display.startFrame(C_BG);
   drawText(12,75,"STARTUP FAILED",false,C_ACCENT);
@@ -465,17 +472,13 @@ static void back() {
 
 void setup() {
   Serial.begin(115200);
-#ifdef PAGER_DEBUG
-  uint32_t serial_wait_started=millis();
-  while(!Serial && millis()-serial_wait_started<8000) delay(10);
-#endif
-  Serial.println("[pager] board init");
+  pagerStartupLog("board init");
   board.begin();
-  if(!display.begin()) { Serial.println("[pager] display init failed"); return; }
+  if(!display.begin()) { pagerStartupLog("display init failed"); return; }
   keyboard.begin();rotary.begin();user_btn.begin();rotary_center.begin();
   settings.brightness=64;settings.keyboard_light=1;
   if(!SPIFFS.begin(true)) {
-    Serial.println("[pager] SPIFFS mount failed");
+    pagerStartupLog("SPIFFS mount failed");
     drawStartupFailure("SPIFFS MOUNT FAILED");
     return;
   }
@@ -487,20 +490,20 @@ void setup() {
 #endif
   display.setBrightness(settings.brightness*255/100);keyboard.setBacklight(settings.keyboard_light?settings.brightness*255/100:0);
   display.startFrame(C_BG);drawText(170,86,"MESH PAGER");drawText(210,112,"v0.1.0",true,C_DIM);display.endFrame();
-  Serial.println("[pager] radio init");
+  pagerStartupLog("radio init");
   if(!radio_init()) {
-    Serial.println("[pager] radio init failed");
+    pagerStartupLog("radio init failed");
     drawStartupFailure("RADIO INIT FAILED");
     return;
   }
-  Serial.println("[pager] radio init ok; starting mesh");
+  pagerStartupLog("radio init ok; starting mesh");
   pager_rng.begin(radio_driver.getRngSeed());
   if(!pager_mesh.start()) {
-    Serial.println("[pager] mesh/storage init failed");
+    pagerStartupLog("mesh/storage init failed");
     drawStartupFailure("MESH START FAILED");
     return;
   }
-  Serial.println("[pager] mesh start ok");
+  pagerStartupLog("mesh start ok");
   pager_mesh.setCurrentChannel(settings.current_channel);
   ChannelDetails selected_channel;
   if(!pager_mesh.getChannel(settings.current_channel,selected_channel)||!selected_channel.name[0]){
@@ -508,15 +511,16 @@ void setup() {
   }
   // RadioLib initializes the shared SPI host after the panel splash. Re-init
   // the ST7796 once more afterward so its bus/panel state is valid for UI frames.
-  Serial.println("[pager] reinitializing display after radio startup");
+  pagerStartupLog("reinitializing display after radio startup");
   if(!display.begin()) {
-    Serial.println("[pager] display reinit failed");
+    pagerStartupLog("display reinit failed");
     drawStartupFailure("DISPLAY REINIT FAILED");
     return;
   }
-  Serial.println("[pager] display ready; drawing inbox");
+  pagerStartupLog("display ready; drawing inbox");
   last_seen_message_serial=pager_mesh.messageSerial();
   last_input=millis();render();
+  pagerStartupLog("inbox frame complete");
 }
 
 void loop() {
